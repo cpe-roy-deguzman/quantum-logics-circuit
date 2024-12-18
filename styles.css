@@ -1,0 +1,57 @@
+QMainWindow {
+    background: rgb(32, 32, 32);
+}
+
+QWidget#toolbar {
+    background: rgb(245, 245, 245);
+}
+
+QWidget#middle {
+    background: rgb(245, 245, 245);
+}
+
+QWidget#result {
+    background: rgb(245, 245, 245);
+}
+
+QLabel#ip-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+}
+
+QLineEdit#ip-input {
+    padding-left: 12;
+    border-radius: 16;
+}
+
+QPushButton#ip-enter {
+    border: none;
+    border-radius: 8px;
+    background: white;
+    color: rgb(32, 32, 32);
+}
+
+QPushButton#ip-enter:pressed {
+    border: 2px solid white;
+    background: rgb(32, 32, 32);
+    color: white;
+}
+
+QWidget#reading-widget {
+    border-radius: 16px;
+    background-color: rgb(48, 48, 48);
+}
+
+QLabel#reading-label {
+    color: rgb(35, 207, 255);
+    font-size: 32px;
+}
+
+QLabel#connection-text {
+    color: white;
+}
+
+QLabel#raw-display {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 18px;
+}
