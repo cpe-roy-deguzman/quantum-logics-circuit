@@ -1,5 +1,6 @@
 import sys
 from io import BytesIO
+import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
 from string import ascii_uppercase as ABC
@@ -24,6 +25,7 @@ TYPE_MEASURE = 2
 GATE_PAULI_X: int = 0
 GATE_PAULI_Y: int = 1
 GATE_PAULI_Z: int = 2
+GATE_HADAMARD: int = 3
 
 buffer = BytesIO()
 
@@ -102,10 +104,10 @@ class QubitComponent(CircuitComponent):
     def __init__(self, id: int, value: int, pixmap, grid_size):
         match value:
             case 1:
-                self.value = np.array([[0], [1]])
+                self.value = sp.Matrix([0, 1])
                 component_name = "qubit-1"
             case _:
-                self.value = np.array([[1], [0]])
+                self.value = sp.Matrix([1, 0])
                 component_name = "qubit-0"
                 
         super().__init__(pixmap, TYPE_QUBIT, component_name, grid_size)
@@ -127,23 +129,30 @@ class GateComponent(CircuitComponent):
     lookup = {
         GATE_PAULI_X: {
             "name": "Pauli-X",
-            "value": np.array([
+            "value": sp.Matrix([
                 [0, 1],
                 [1, 0]
             ])
         },
         GATE_PAULI_Y: {
             "name": "Pauli-Y",
-            "value": np.array([
+            "value": sp.Matrix([
                 [0, -1j],
                 [1j, 0]
             ])
         },
         GATE_PAULI_Z: {
             "name": "Pauli-Z",
-            "value": np.array([
+            "value": sp.Matrix([
                 [1, 0],
                 [0, -1]
+            ])
+        },
+        GATE_HADAMARD: {
+            "name": "Hadamard",
+            "value": (1 / sp.sqrt(2)) * sp.Matrix([
+                [1, 1],
+                [1, -1]
             ])
         }
     }
@@ -159,6 +168,8 @@ class GateComponent(CircuitComponent):
                     self.gate_type = GATE_PAULI_Y
                 case "PAULI-Z":
                     self.gate_type = GATE_PAULI_Z
+                case "HADAMARD":
+                    self.gate_type = GATE_HADAMARD
                 case _:
                     self.gate_type = GATE_PAULI_X
         
@@ -218,16 +229,17 @@ class ComponentIcon(QWidget):
     """
     A QWidget subclass for draggable component icons.
     """
-    def __init__(self, pixmap: QPixmap, component_name: str, component_type: int, display_text: str = "Component"):
+    def __init__(self, img: str, component_name: str, component_type: int, icon_size: tuple[int, int] = (50, 50)):
         super().__init__()
-        text = QLabel(display_text)
+        icon_w, icon_h = icon_size
+        text = QLabel(component_name)
         text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         text.setFixedHeight(15)
-        text.setFont(QFont("Montserrat Medium", 9))
+        text.setFont(QFont("Montserrat Medium", 6))
         icon = QLabel()
-        icon.setPixmap(pixmap)
+        icon.setPixmap(QPixmap(img).scaled(icon_w, icon_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-        self.setFixedSize(pixmap.width(), pixmap.height() + text.height())
+        self.setFixedSize(icon_w, icon_h + text.height())
         self.setObjectName("component-icon")
         self.setContentsMargins(0, 0, 0, 0)
 
@@ -237,6 +249,7 @@ class ComponentIcon(QWidget):
         self.mainLayout.addWidget(icon)
         self.mainLayout.addWidget(text)
 
+        self.__img = img
         self.component_name = component_name
         self.component_type = component_type
 
@@ -245,7 +258,7 @@ class ComponentIcon(QWidget):
             # Component Dragging Operation
             drag = QDrag(self)
             mime_data = QMimeData()
-            mime_data.setText(str(self.component_type) + "," + self.component_name)
+            mime_data.setText(f"{self.component_type},{self.__img},{self.component_name}")
             drag.setMimeData(mime_data)
 
             # Drag preview
@@ -268,12 +281,13 @@ class QuantumToolbar(QScrollArea):
 
         # Enumerate quantum circuit components
         components = [
-            {"name": "qubit-0", "type": TYPE_QUBIT, "img": "qubit-0.png", "pos": (1, 0)},
-            {"name": "qubit-1", "type": TYPE_QUBIT, "img": "qubit-1.png", "pos": (1, 1)},
+            {"name": "Qubit 0", "type": TYPE_QUBIT, "img": "qubit-0.png", "pos": (1, 0)},
+            {"name": "Qubit 1", "type": TYPE_QUBIT, "img": "qubit-1.png", "pos": (1, 1)},
             {"name": "Pauli-X", "type": TYPE_GATE, "img": "Pauli-X.png", "pos": (3, 0)},
             {"name": "Pauli-Y", "type": TYPE_GATE, "img": "Pauli-Y.png", "pos": (3, 1)},
             {"name": "Pauli-Z", "type": TYPE_GATE, "img": "Pauli-Z.png", "pos": (4, 0)},
-            {"name": "measure", "type": TYPE_MEASURE, "img": "measure.png", "pos": (6, 0)}
+            {"name": "Hadamard", "type": TYPE_GATE, "img": "hadamard.png", "pos": (4, 1)},
+            {"name": "Measure", "type": TYPE_MEASURE, "img": "measure.png", "pos": (6, 0)}
         ]
 
         main = QWidget(self)
@@ -289,7 +303,7 @@ class QuantumToolbar(QScrollArea):
 
         # Populate palette with components
         for component in components:
-            grid.addWidget(ComponentIcon(QPixmap(component.get("img", "null.png")), component["name"], component["type"]), *component["pos"])
+            grid.addWidget(ComponentIcon(component.get("img", "null.png"), component["name"], component["type"]), *component["pos"])
         
         self.setWidget(main)
         self.setWidgetResizable(True)
@@ -387,6 +401,7 @@ class SimulationWindow(QGraphicsView):
         super().__init__(parent=parent)
         self.setObjectName("simulation-window")
         self.setContentsMargins(0, 0, 0, 0)
+        self.setFrameShape(QFrame.Shape.NoFrame)
 
         self.scene : SimulationScene = SimulationScene(self)
         self.scene.setSceneRect(0, 0, WIN_WIDTH, WIN_HEIGHT)
@@ -462,10 +477,9 @@ class SimulationWindow(QGraphicsView):
             data = event.mimeData().text().split(",")
 
             component_type: int = int(data[0]) if data[0].isnumeric() else TYPE_QUBIT
-            
-            component_name: str = data[1]
+            component_name: str = data[2]
 
-            pixmap = QPixmap(f"{component_name}.png")
+            pixmap = QPixmap(data[1])
 
             if component_type == TYPE_QUBIT:
                 qubit_value: int = 1 if component_name == "qubit-1" else 0
@@ -493,8 +507,6 @@ class SimulationWindow(QGraphicsView):
             event.acceptProposedAction()
 
             self.scene.check_connections(item)
-
-        
 
 class ResultsWidget(QWidget):
     def __init__(self, parent):
@@ -573,16 +585,19 @@ class ResultsWidget(QWidget):
 
         layout.setCurrentIndex(2)
 
-    def process_results(self, final_state: np.ndarray, qubit_states: dict[int, np.ndarray]):
+    def process_results(self, final_state: sp.ImmutableDenseNDimArray, qubit_states: dict[int, sp.Matrix]):
         """
         Process and display the results based on the final state.
         """
-        num_qubits = len(qubit_states)              # Number of qubits
-        probabilities = np.abs(final_state) ** 2    # Probabilities for each basis state
+        # Number of qubits
+        num_qubits = len(qubit_states)              
+        # Probabilities for each basis state
+        probabilities = sp.ImmutableDenseNDimArray(final_state.applyfunc(lambda x: sp.Abs(x) ** 2))
+        probabilities = probabilities.reshape(sp.prod(probabilities.shape))
 
         # Calculate for measured output using probabilities
         basis_states = list(range(2 ** num_qubits))
-        output = np.random.choice(basis_states, p=probabilities.transpose().flatten())
+        output = np.random.choice(basis_states, p=probabilities)
         self.measuredOutputLabel.setText(format(output, f"0{num_qubits}b"))
 
         # Display probabilities for all basis states
@@ -590,7 +605,7 @@ class ResultsWidget(QWidget):
         self.probabilitiesTable.setRowCount(len(probabilities))
         for i, p in enumerate(probabilities):
             item_state = QTableWidgetItem(format(i, f"0{num_qubits}b"))
-            item_probability = QTableWidgetItem(f"{p.item() * 100:.2f}%")
+            item_probability = QTableWidgetItem(f"{float(p) * 100:.2f}%")
             self.probabilitiesTable.setItem(i, 0, item_state)
             self.probabilitiesTable.setItem(i, 1, item_probability)
         
@@ -610,12 +625,11 @@ class ResultsWidget(QWidget):
         # Set index of stacked layout to show the results page
         self.layout().setCurrentIndex(0)
 
-    def display_state_vector(self, full_state: np.ndarray, num_qubits: int):
+    def display_state_vector(self, full_state: sp.ImmutableDenseNDimArray, num_qubits: int):
         """
         Display the resulting quantum state vector.
         """
-        
-        data = r"$\left.|\psi\right\rangle" + f"={"+".join([f'{x} \\left.|{format(i, f'0{num_qubits}b')}\\right\\rangle' for i, x in enumerate(full_state.flatten())])}$"
+        data = r"$\left.|\psi\right\rangle" + f"={"+".join([f'{sp.latex(x)} \\left.|{format(i, f'0{num_qubits}b')}\\right\\rangle' for i, x in enumerate(full_state)])}$"
 
         self.stateVectorArea.clear()
         self.stateVectorArea.axis("off")
@@ -627,7 +641,7 @@ class ResultsWidget(QWidget):
         while self.qubitsLayout.count() > 0:
             self.qubitsLayout.removeWidget(self.qubitsLayout.itemAt(0).widget())
 
-    def display_qubits_info(self, qubit_states: dict[int, np.ndarray], num_qubits: int):
+    def display_qubits_info(self, qubit_states: dict[int, sp.Matrix], num_qubits: int):
         for i, q in enumerate(qubit_states.items()):
             id, state = q
 
@@ -646,16 +660,18 @@ class ResultsWidget(QWidget):
             qs_label.setPixmap(self.get_qubit_state(state))
             self.qubitsLayout.addWidget(qs_label, i, 2, Qt.AlignmentFlag.AlignCenter)
 
-    def get_bloch_sphere(self, qubit_state: np.ndarray) -> QPixmap:
+    def get_bloch_sphere(self, qubit_state: sp.Matrix) -> QPixmap:
         """
         Retrieve the Bloch sphere representation of a qubit state as a QPixmap.
         """
         # Initialize figures for Bloch Sphere
         bs_figure = Figure(figsize=(4, 4), dpi=100)
         ax = bs_figure.add_subplot(1, 1, 1, projection='3d')
+        ax.clear()
         ax.autoscale(enable=False)
         ax.axis("off")
         ax.set_box_aspect((1, 1, 1))
+        
 
         # Shift view (pan)
         shift_x, shift_y = 0.1, 0
@@ -665,6 +681,8 @@ class ResultsWidget(QWidget):
 
         # Compute Bloch sphere coordinates
         alpha, beta = qubit_state
+        alpha = float(alpha)
+        beta = float(beta)
         theta = 2 * np.arccos(np.abs(alpha))
         phi = np.angle(beta) - np.angle(alpha)
         x = np.sin(theta) * np.cos(phi)
@@ -717,29 +735,53 @@ class ResultsWidget(QWidget):
         buffer.truncate(0)
 
         # Save plot as image to a bytes buffer
-        bs_figure.savefig(buffer, format="png", bbox_inches=Bbox.from_bounds(1, 1, 2, 2))
+        bs_figure.savefig(buffer, format="png", bbox_inches=Bbox.from_bounds(1, 1, 2, 2), transparent=True)
         buffer.seek(0)
 
         bs_pixmap = QPixmap()
         bs_pixmap.loadFromData(buffer.getvalue(), "PNG")
         return bs_pixmap.scaled(150, 150, transformMode=Qt.TransformationMode.SmoothTransformation)
             
-    def get_qubit_state(self, qubit_state: np.ndarray, size:tuple[int, int] = (50, 100), text_box_size: tuple[int, int]= (40, 20), mar_y: int = 20, b_l: int = 10) -> QPixmap:
+    def get_qubit_state(self, qubit_state: sp.Matrix, size:tuple[int, int] = (50, 100), text_box_size: tuple[int, int]= (40, 40), mar_y: int = 5, b_l: int = 10) -> QPixmap:
         """
         Display the qubit state as a LaTeX matrix using matplotlib.
         """
         w, h = size
         t_w, t_h = text_box_size
-        alpha, beta = qubit_state.flatten()
+        state_pixmaps: list[QPixmap] = []
+
+        exp_fig = Figure(figsize=(4, 4), dpi=50)
+        exp_ax = exp_fig.add_subplot(1, 1, 1)
+        exp_ax.axis("off")
+
+        global buffer
+
+        for state in qubit_state:
+            exp_ax.clear()
+            exp_ax.axis("off")
+
+            exp_ax.text(0.5, 0.5, f"${sp.latex(state)}$", fontsize=160, va="center", ha="center")
+
+            buffer.seek(0)
+            buffer.truncate(0)
+
+            exp_fig.savefig(buffer, format="PNG", transparent=True)
+
+            exp_pixmap = QPixmap()
+            exp_pixmap.loadFromData(buffer.getvalue(), "PNG")
+            exp_pixmap = exp_pixmap.scaled(t_w, t_h, transformMode=Qt.TransformationMode.SmoothTransformation)
+            state_pixmaps.append(exp_pixmap)
 
         output = QPixmap(*size)
         output.fill(QColorConstants.Transparent)
+
         painter = QPainter(output)
         painter.setPen(QPen(QColor("black"), 2))
-        painter.setFont(QFont("Cambria Math", 18))
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        painter.drawText(w // 2 - t_w // 2, mar_y, t_w, t_h, Qt.AlignmentFlag.AlignCenter, f"{alpha}")
-        painter.drawText(w // 2 - t_w // 2, h - mar_y - t_h, t_w, t_h, Qt.AlignmentFlag.AlignCenter, f"{beta}")
+        if len(state_pixmaps) >= 2:
+            painter.drawPixmap(w // 2 - t_w // 2, mar_y, t_w, t_h, state_pixmaps[0])
+            painter.drawPixmap(w // 2 - t_w // 2, h - mar_y - t_h, t_w, t_h, state_pixmaps[1])
 
         painter.drawPolyline(
             QPoint(b_l, 0),
@@ -801,6 +843,7 @@ class MainWindow(QMainWindow):
         
         middleLayout = QVBoxLayout(middle)
         middleLayout.setSpacing(0)
+        middleLayout.setContentsMargins(0, 0, 0, 0)
         middleLayout.addWidget(self.simulationWindow, 1)
         middleLayout.addWidget(self.simulationTools, 0)
 
@@ -830,14 +873,14 @@ class MainWindow(QMainWindow):
             return
 
         # Traverse and simulate each qubit
-        qubit_states : dict = {}
+        qubit_states : dict[int, sp.Matrix] = {}
         for qubit in qubits:
-            curr_state: np.ndarray = qubit.value  # Initial state of the qubit
+            curr_state: sp.Matrix = qubit.value  # Initial state of the qubit
             curr_component = qubit.connected_next
 
             while curr_component:
                 if isinstance(curr_component, GateComponent):
-                    curr_state = np.dot(curr_component.value, curr_state)  # Apply gate matrix
+                    curr_state = curr_component.value * curr_state  # Apply gate matrix
                 elif isinstance(curr_component, MeasureComponent):
                     # Simulate measurement
                     qubit_states.update({qubit.getID(): curr_state})
@@ -847,12 +890,13 @@ class MainWindow(QMainWindow):
 
         # Calculate for the final state using tensor (kronecker) product
         if qubit_states:
-            states: list[np.ndarray] = list(qubit_states.values())
-            final_state: np.ndarray = states[0]
+            states: list[sp.Matrix] = list(qubit_states.values())
+            final_state = states[0]
 
             for i, state in enumerate(states):
                 if i >= 1:
-                    final_state = np.kron(final_state, state)
+                    final_state = sp.tensorproduct(final_state, state)
+                    final_state = final_state.reshape(sp.prod(final_state.shape))
 
             # Process the final state and qubit states to display (in the ResultsWidget)
             self.resultsWindow.process_results(final_state, qubit_states)
@@ -862,8 +906,6 @@ class MainWindow(QMainWindow):
 def runApp():
     app = QApplication(sys.argv)
     QFontDatabase.addApplicationFont("Montserrat-Medium.ttf")
-
-    
 
     window = MainWindow()
     window.show()
